@@ -6,7 +6,7 @@ import matplotlib.font_manager as fm
 import matplotlib as mpl
 
 # フォント設定（Mac用）
-mpl.rcParams['font.family'] = ['Hiragino Sans', 'AppleGothic', 'Arial Unicode MS']
+plt.rcParams['font.family'] = 'Noto Sans CJK JP'
 
 # チームカラー辞書（例）
 TEAM_COLORS = {
