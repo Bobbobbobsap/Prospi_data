@@ -6,7 +6,8 @@ import matplotlib.font_manager as fm
 import matplotlib as mpl
 
 # フォントパス指定（Streamlit Cloud用に絶対パス化）
-font_path = os.path.join(os.path.dirname(__file__), "font", "NotoSansJP-VariableFont_wght.ttf")
+import pathlib
+font_path = str(pathlib.Path("font/NotoSansJP-VariableFont_wght.ttf").resolve())
 
 # フォントを登録
 fm.fontManager.addfont(font_path)
