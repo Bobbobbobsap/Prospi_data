@@ -9,7 +9,8 @@ import matplotlib as mpl
 import matplotlib as mpl
 font_path = "font/NotoSansJP-VariableFont_wght.ttf"
 font_prop = fm.FontProperties(fname=font_path)
-mpl.rcParams['font.family'] = font_prop.get_name()
+mpl.rcParams["font.family"] = font_prop.get_name()
+plt.rcParams["font.family"] = font_prop.get_name()  # 念のため両方
 
 # チームカラー辞書（例）
 TEAM_COLORS = {
