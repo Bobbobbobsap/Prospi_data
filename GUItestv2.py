@@ -4,18 +4,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import matplotlib as mpl
-import os
 
-# フォントパス指定（Streamlit Cloud用に絶対パス化）
-font_path = os.path.join(os.path.dirname(__file__), "font", "NotoSansJP-VariableFont_wght.ttf")
-
-# フォントを登録
-fm.fontManager.addfont(font_path)
-font_prop = fm.FontProperties(fname=font_path)
-
-# matplotlibにフォントを設定
-mpl.rcParams["font.family"] = font_prop.get_name()
-mpl.rcParams["axes.unicode_minus"] = False
+# フォント設定（Mac用）
+mpl.rcParams['font.family'] = ['Hiragino Sans', 'AppleGothic', 'Arial Unicode MS']
 
 # チームカラー辞書（例）
 TEAM_COLORS = {
@@ -75,7 +66,8 @@ if mode == "投手":
         "🏟 チーム別比較",
         "📌 詳細解析",
         "🚀 ブレイク選手",
-        "📋 サマリーパネル"
+        "📋 サマリーパネル",
+        "🧱 選手層（年齢×ポジション）"
     ])
 else:
     tabs = st.tabs([
@@ -281,7 +273,7 @@ with tabs[3]:
         st.pyplot(fig)
 
     with col2:
-        st.dataframe(df_grouped.reset_index().rename(columns={metric: f"{metric}の平均"}))
+        st.dataframe(df_grouped.reset_index().rename(columns={metric: f"{metric}"}))
 
     st.markdown("### 各指標で上位/下位チーム一覧")
 
@@ -475,3 +467,80 @@ with tabs[6]:
     st.write(f"#### 年度別成績一覧（{selected_player}）")
     drop_cols = [col for col in ["group_file"] if col in df_player.columns]
     st.dataframe(df_player.drop(columns=drop_cols))
+
+
+with tabs[7]:
+    if mode == "野手":
+        st.info("野手モードは現在未実装です。")
+        st.stop()
+
+    st.write("### 🧱 投手年齢分布（左投/右投）")
+
+    # 年とチーム選択を個別に指定
+    unique_teams = sorted(df["team_name"].dropna().unique())
+    team_selected = st.selectbox("チームを選択", unique_teams, key="team_selected_pitcher_only")
+    df_pos = df[(df["year"] == selected_year) & (df["team_name"] == team_selected)].copy()
+
+    # 投手だけに絞る
+    df_pos["age"] = pd.to_numeric(df_pos["age"], errors="coerce")
+    df_pos = df_pos.dropna(subset=["position", "age", "hand"])
+    df_pos = df_pos[df_pos["position"].astype(str).str.contains("投")]
+    df_pos["age"] = df_pos["age"].astype(int).clip(lower=18, upper=43)
+
+    def classify_throwing_hand(hand_str):
+        if isinstance(hand_str, str):
+            if "左" in hand_str:
+                return "左投"
+            elif "右" in hand_str:
+                return "右投"
+        return "不明"
+
+    df_pos["投手種別"] = df_pos["hand"].apply(classify_throwing_hand)
+    df_pos = df_pos[df_pos["投手種別"].isin(["左投", "右投"])]
+
+    # 年齢ごとの人数をカウント
+    age_hand_counts = df_pos.groupby(["age", "投手種別"]).size().unstack(fill_value=0).sort_index()
+    # 年齢範囲を埋める
+    full_age_range = range(df_pos["age"].min(), df_pos["age"].max() + 1)
+    age_hand_counts = age_hand_counts.reindex(full_age_range, fill_value=0)
+
+    # グラフ描画とテーブルを横並びに表示
+    fig, ax = plt.subplots(figsize=(6, 5))
+    age_hand_counts.plot(kind="bar", stacked=True, ax=ax, color={"左投": "#42a5f5", "右投": "#ef5350"})
+    ax.set_ylabel("人数")
+    ax.set_xlabel("年齢")
+    ax.set_title(f"{selected_year}年 {team_selected} 投手年齢分布（左投/右投）")
+    fig.tight_layout()
+
+    df_display = df_pos[["age", "選手名", "投手種別"]].copy()
+    def color_name(row):
+        color = "#42a5f5" if row["投手種別"] == "左投" else "#ef5350"
+        return f'<span style="color:{color}">{row["選手名"]}</span>'
+
+    df_display["選手名"] = df_display.apply(color_name, axis=1)
+    # group by age, join player names with 、 and smaller font
+    df_display_grouped = df_display.groupby("age")["選手名"].apply(lambda x: "、".join(x)).reset_index()
+    df_display_grouped = df_display_grouped.sort_values("age")
+
+    col1, col2 = st.columns([1.2, 1])
+    with col1:
+        st.markdown("<br>", unsafe_allow_html=True)  # さらにスペースを追加
+        st.pyplot(fig)
+        # 左右投手人数・割合をテキストで表示
+        hand_counts_total = df_pos["投手種別"].value_counts().reindex(["左投", "右投"]).fillna(0)
+        left_count = int(hand_counts_total.get("左投", 0))
+        right_count = int(hand_counts_total.get("右投", 0))
+        total = left_count + right_count
+        if total > 0:
+            left_pct = round(left_count / total * 100, 1)
+            right_pct = round(right_count / total * 100, 1)
+            st.markdown(f"**左投手**: {left_count}人（{left_pct}%）  /  **右投手**: {right_count}人（{right_pct}%）")
+        else:
+            st.markdown("**左投手/右投手の情報がありません。**")
+    with col2:
+        styled_html = (
+            "<div style='font-size: 12px;'>"
+            + df_display_grouped.to_html(escape=False, index=False)
+            + "</div>"
+        )
+        st.markdown(styled_html, unsafe_allow_html=True)
