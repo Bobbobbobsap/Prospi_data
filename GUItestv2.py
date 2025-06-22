@@ -7,7 +7,9 @@ import matplotlib as mpl
 
 # フォント設定（Mac用）
 import matplotlib as mpl
-mpl.rcParams['font.family'] = ['sans-serif']
+font_path = "font/NotoSansJP-VariableFont_wght.ttf"
+font_prop = fm.FontProperties(fname=font_path)
+mpl.rcParams['font.family'] = font_prop.get_name()
 
 # チームカラー辞書（例）
 TEAM_COLORS = {
