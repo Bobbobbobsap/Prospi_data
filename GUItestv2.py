@@ -7,7 +7,7 @@ import matplotlib as mpl
 
 # フォント設定（Mac用）
 import matplotlib as mpl
-mpl.rcParams['font.family'] = ['AppleGothic', 'Arial Unicode MS', 'IPAexGothic', 'sans-serif']
+mpl.rcParams['font.family'] = ['sans-serif']
 
 # チームカラー辞書（例）
 TEAM_COLORS = {
