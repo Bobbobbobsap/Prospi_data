@@ -4,13 +4,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import matplotlib as mpl
+import os
 
-# フォント設定（Mac用）
-import matplotlib as mpl
-font_path = "font/NotoSansJP-VariableFont_wght.ttf"
+# フォントパス指定（Streamlit Cloud用に絶対パス化）
+font_path = os.path.join(os.path.dirname(__file__), "font", "NotoSansJP-VariableFont_wght.ttf")
+
+# フォントを登録
+fm.fontManager.addfont(font_path)
 font_prop = fm.FontProperties(fname=font_path)
+
+# matplotlibにフォントを設定
 mpl.rcParams["font.family"] = font_prop.get_name()
-plt.rcParams["font.family"] = font_prop.get_name()  # 念のため両方
+mpl.rcParams["axes.unicode_minus"] = False
 
 # チームカラー辞書（例）
 TEAM_COLORS = {
