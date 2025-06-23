@@ -7,7 +7,6 @@ import matplotlib as mpl
 import os
 
 # フォントパス指定（Streamlit Cloud用に絶対パス化）
-
 import pathlib
 font_path = str(pathlib.Path("font/NotoSansJP-VariableFont_wght.ttf").resolve())
 
@@ -498,11 +497,13 @@ with tabs[7]:
     df_pos = df_pos[df_pos["position"].astype(str).str.contains("投")]
     df_pos["age"] = df_pos["age"].astype(int).clip(lower=18, upper=43)
 
+
     def classify_throwing_hand(hand_str):
         if isinstance(hand_str, str):
-            if "左" in hand_str:
+            hand_str = hand_str.strip().replace(" ", "").replace("　", "")  # 半角・全角スペース除去
+            if "左投" in hand_str:
                 return "左投"
-            elif "右" in hand_str:
+            elif "右投" in hand_str:
                 return "右投"
         return "不明"
 
