@@ -631,3 +631,8 @@ with tabs[7]:
     throw_bat_summary = df_pos["投打分類"].value_counts().reset_index()
     throw_bat_summary.columns = ["投打", "人数"]
     st.dataframe(throw_bat_summary)
+
+# サイドバーにアプリバージョンを表示
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("**アプリバージョン**: v1.0.0")
