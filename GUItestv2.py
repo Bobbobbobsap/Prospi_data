@@ -18,6 +18,9 @@ font_prop = fm.FontProperties(fname=font_path)
 mpl.rcParams["font.family"] = font_prop.get_name()
 mpl.rcParams["axes.unicode_minus"] = False
 
+
+
+
 # チームカラー辞書（例）
 TEAM_COLORS = {
     "giants": "#f97709", "hanshin": "#ffe201", "dragons": "#002569",
@@ -34,6 +37,8 @@ def load_data():
     return df
 
 df = load_data()
+# 「1」～「5」列を文字列型に変換（先頭ゼロや数値化防止のため）
+df[["1", "2", "3", "4", "5"]] = df[["1", "2", "3", "4", "5"]].astype(str)
 
 df["year"] = pd.to_numeric(df["year"], errors="coerce")
 df["IP_"] = pd.to_numeric(df["IP_"], errors="coerce")
@@ -98,15 +103,16 @@ with tabs[0]:
     min_starts = st.slider("最低先発数", 0, 30, 0)
     min_reliever = st.slider("最低中継ぎ登板数", 0, 100, 0)
     
-    metric = st.selectbox("ランキング指標を選択", [
-    "防御率","投球回","勝率","勝","敗","セーブ","HP",
-    "登板", "先発", "完封", "完投", "QS", "QS率", "HQS","HQS率",
-    "奪三振", "奪三率", "与四球", "四球率", "与死球", "死球率",
-    "被安打", "被打率", "圏打率", "圏率差", "圏安打",
-    "右被率", "右率差", "右被安", "左被率", "左率差",
-    "被本率", "K/BB", "WHIP", "許盗率", "暴投",
-    "K/9", "BB/9", "K-BB%", "Command+"
-    ])
+    metrics_options = [
+        "防御率","投球回","勝率","勝","敗","セーブ","HP",
+        "登板", "先発", "完封", "完投", "QS", "QS率", "HQS","HQS率",
+        "奪三振", "奪三率", "与四球", "四球率", "与死球", "死球率",
+        "被安打", "被打率", "圏打率", "圏率差", "圏安打",
+        "右被率", "右率差", "右被安", "左被率", "左率差",
+        "被本率", "K/BB", "WHIP", "許盗率", "暴投",
+        "K/9", "BB/9", "K-BB%", "Command+"
+    ]
+    metric = st.selectbox("ランキング指標を選択", metrics_options, index=0)
     ascending = st.radio("並べ替え順", ["昇順", "降順"]) == "昇順"
     top_n = st.slider("表示件数", 1, 30, 10)
 
@@ -395,7 +401,12 @@ with tabs[4]:
     x_metric = st.selectbox("横軸（例：勝率など）", df_filtered.columns.tolist(), index=df_filtered.columns.get_loc("勝率") if "勝率" in df_filtered.columns else 0)
     y_metric = st.selectbox("縦軸（例：QS率など）", df_filtered.columns.tolist(), index=df_filtered.columns.get_loc("QS率") if "QS率" in df_filtered.columns else 1)
 
-    min_ip_detail = st.slider("最低投球回（詳細解析用）", 0, 200, 30)
+
+    # 追加: 詳細解析用のフィルタ
+    min_ip = st.slider("最低投球回", 0, 200, 30, key="ip_detail")
+    min_games = st.slider("最低登板数", 0, 50, 10, key="games_detail")
+    min_starts = st.slider("最低先発数", 0, 30, 0, key="starts_detail")
+    min_reliever = st.slider("最低中継ぎ登板数", 0, 100, 0, key="reliever_detail")
 
     df_plot = df_filtered.copy()
     df_plot[x_metric] = pd.to_numeric(df_plot[x_metric], errors="coerce")
@@ -403,7 +414,18 @@ with tabs[4]:
     df_plot["IP_"] = pd.to_numeric(df_plot["IP_"], errors="coerce")
 
     df_plot = df_plot.dropna(subset=[x_metric, y_metric, "IP_", "選手名", "team_name"])
-    df_plot = df_plot[df_plot["IP_"] >= min_ip_detail]
+
+    # 追加: 項目別ランキングと同様のフィルタ
+    df_plot["登板"] = pd.to_numeric(df_plot["登板"], errors="coerce")
+    df_plot["先発"] = pd.to_numeric(df_plot["先発"], errors="coerce")
+    df_plot["中継ぎ"] = (df_plot["登板"] - df_plot["先発"]).abs()
+
+    df_plot = df_plot[
+        (df_plot["IP_"] >= min_ip) &
+        (df_plot["登板"] >= min_games) &
+        (df_plot["先発"] >= min_starts) &
+        (df_plot["中継ぎ"] >= min_reliever)
+    ]
 
     fig, ax = plt.subplots()
     for team in df_plot["team_name"].unique():
@@ -436,7 +458,34 @@ with tabs[6]:
     available_players = df_filtered["選手名"].dropna().unique().tolist()
     selected_player = st.selectbox("選手を選択", sorted(available_players))
 
+    # 画像表示処理を追加
+    import os
+    from PIL import Image
+
+    image_path = None
+    image_dir = f"{selected_year}"
     df_player = df[df["選手名"] == selected_player].copy()
+
+    if not df_player.empty:
+        filename_candidate = df_player.sort_values("year", ascending=False).iloc[0].get("filename", "")
+        # nanやNoneのときはstr()で"nan"などにならないように
+        if isinstance(filename_candidate, str) and filename_candidate and filename_candidate.lower().endswith(".png"):
+            candidate_path = os.path.join(image_dir, filename_candidate)
+            if os.path.exists(candidate_path):
+                image_path = candidate_path
+            else:
+                st.warning(f"画像ファイルが存在しません: {candidate_path}")
+        else:
+            st.warning(f"不正なファイル名: {filename_candidate}")
+
+    if image_path:
+        try:
+            st.image(image_path, caption=f"{selected_player}の画像", use_container_width=True)
+        except Exception as e:
+            st.error(f"画像表示に失敗しました: {e}")
+    else:
+        st.info("画像が見つかりませんでした。") 
+
     if df_player.empty:
         st.warning(f"{selected_player} のデータが見つかりませんでした。")
         st.stop()
@@ -476,6 +525,8 @@ with tabs[6]:
 
     st.write(f"#### 年度別成績一覧（{selected_player}）")
     drop_cols = [col for col in ["group_file"] if col in df_player.columns]
+    if "filename" in df_player.columns:
+        drop_cols.append("filename")
     st.dataframe(df_player.drop(columns=drop_cols))
 
 
@@ -497,7 +548,6 @@ with tabs[7]:
     df_pos = df_pos[df_pos["position"].astype(str).str.contains("投")]
     df_pos["age"] = df_pos["age"].astype(int).clip(lower=18, upper=43)
 
-
     def classify_throwing_hand(hand_str):
         if isinstance(hand_str, str):
             hand_str = hand_str.strip().replace(" ", "").replace("　", "")  # 半角・全角スペース除去
@@ -509,6 +559,25 @@ with tabs[7]:
 
     df_pos["投手種別"] = df_pos["hand"].apply(classify_throwing_hand)
     df_pos = df_pos[df_pos["投手種別"].isin(["左投", "右投"])]
+
+    # 投打フル組み合わせ分類を追加
+    def classify_throw_bat(hand_str):
+        if isinstance(hand_str, str):
+            hand_str = hand_str.strip().replace(" ", "").replace("　", "")
+            if "右投右打" in hand_str:
+                return "右投右打"
+            elif "右投左打" in hand_str:
+                return "右投左打"
+            elif "右投両打" in hand_str:
+                return "右投両打"
+            elif "左投右打" in hand_str:
+                return "左投右打"
+            elif "左投左打" in hand_str:
+                return "左投左打"
+            elif "左投両打" in hand_str:
+                return "左投両打"
+        return "不明"
+    df_pos["投打分類"] = df_pos["hand"].apply(classify_throw_bat)
 
     # 年齢ごとの人数をカウント
     age_hand_counts = df_pos.groupby(["age", "投手種別"]).size().unstack(fill_value=0).sort_index()
@@ -556,3 +625,9 @@ with tabs[7]:
             + "</div>"
         )
         st.markdown(styled_html, unsafe_allow_html=True)
+
+    # 投打別内訳テーブル
+    st.markdown("### 投打別内訳")
+    throw_bat_summary = df_pos["投打分類"].value_counts().reset_index()
+    throw_bat_summary.columns = ["投打", "人数"]
+    st.dataframe(throw_bat_summary)
