@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import matplotlib as mpl
 import os
+from scipy.stats import zscore  # クラスタタイプ分類で使用
 
 # フォントパス指定（Streamlit Cloud用に絶対パス化）
 import pathlib
@@ -31,22 +32,27 @@ TEAM_COLORS = {
 
 # データ読み込み
 def load_data():
-    conn = sqlite3.connect("pitching_stats.db")
+    conn = sqlite3.connect("player_stats.db")
     df = pd.read_sql_query("SELECT * FROM pitching_stats", conn)
     conn.close()
     return df
 
 # 野手データ読み込み
 def load_batter_data():
-    conn = sqlite3.connect("batting_stats.db")
+    conn = sqlite3.connect("player_stats.db")
     df = pd.read_sql_query("SELECT * FROM batting_stats", conn)
+    conn.close()
+    return df
+
+# 能力データ読み込み
+def load_ability_data():
+    conn = sqlite3.connect("player_stats.db")
+    df = pd.read_sql_query("SELECT * FROM ability_stats", conn)
     conn.close()
     return df
 
 df = load_data()
 df_batter = pd.DataFrame()
-# 「1」～「5」列を文字列型に変換（先頭ゼロや数値化防止のため）
-df[["1", "2", "3", "4", "5"]] = df[["1", "2", "3", "4", "5"]].astype(str)
 
 df["year"] = pd.to_numeric(df["year"], errors="coerce")
 df["IP_"] = pd.to_numeric(df["IP_"], errors="coerce")
@@ -71,7 +77,7 @@ with st.sidebar:
             selected_teams = [t for t in teams if t in ["hawks", "lions", "eagles", "marines", "Buffaloes", "fighters"]]
     else:
         selected_teams = teams
-    # モード選択追加
+    # モード選択: 「投手」「野手」のみ
     mode = st.radio("モード選択", ["投手", "野手"])
 
 # グローバルフィルター
@@ -79,7 +85,7 @@ df_filtered = pd.DataFrame()  # 初期化
 df_batter = pd.DataFrame()    # 初期化
 if mode == "投手":
     df_filtered = df[(df["year"] == selected_year) & (df["team_name"].isin(selected_teams))]
-else:
+elif mode == "野手":
     df_batter = load_batter_data()
     for col in ["1", "2", "3", "4", "5"]:
         if col in df_batter.columns:
@@ -87,7 +93,6 @@ else:
     df_batter["year"] = pd.to_numeric(df_batter["year"], errors="coerce")
     df_filtered = df_batter[(df_batter["year"] == selected_year) & (df_batter["team_name"].isin(selected_teams))]
 
-# タブ定義（モードに関係なく共通）
 tabs = st.tabs([
     "🏆 項目別ランキング",
     "📈 昨年→今年 比較ランキング",
@@ -96,10 +101,14 @@ tabs = st.tabs([
     "📌 詳細解析",
     "🚀 ブレイク選手",
     "📋 サマリーパネル",
-    "🧱 選手層（年齢×ポジション）"
+    "🧱 選手層（年齢×ポジション）",
+    "🧍 ポジション別出場主力",
+    "🏆 タイトル・順位",
+    "🧠 クラスタ分析（リーグ・チーム別）"
 ])
 
 # 今後、各タブに処理を追加していく（この構造で分岐・分割）
+
 with tabs[0]:
     if mode == "野手":
         st.write("### 野手ランキング")
@@ -144,7 +153,7 @@ with tabs[0]:
         ax.set_xlabel(bat_metric)
         ax.set_title(f"{selected_year}年 {bat_metric} ランキング")
         st.pyplot(fig)
-    else:
+    elif mode == "投手":
         st.write("### 項目別ランキング")
         
         min_ip = st.slider("最低投球回", 0, 200, 30)
@@ -171,6 +180,10 @@ with tabs[0]:
             if isinstance(col, str) and col in df_rank.columns:
                 df_rank[col] = pd.to_numeric(df_rank[col], errors="coerce")
 
+        # カラム存在チェック
+        if metric not in df_rank.columns:
+            st.warning(f"選択された指標 '{metric}' はデータに存在しません。")
+            st.stop()
         df_rank = df_rank.dropna(subset=[metric])
         df_rank["中継ぎ"] = (df_rank["登板"] - df_rank["先発"]).abs()
         df_rank = df_rank[
@@ -191,17 +204,21 @@ with tabs[0]:
         ax.set_xlabel(metric)
         ax.set_title(f"{selected_year}年 {metric} ランキング")
         st.pyplot(fig)
+    else:
+        pass
 
 with tabs[1]:
     if mode == "野手":
         st.info("野手モードは現在未実装です。")
-        
+    elif mode == "投手":
+        pass
     st.write("### 昨年→今年 比較ランキング（未実装）")
 
 with tabs[2]:
     if mode == "野手":
         st.info("野手モードは現在未実装です。")
-        
+    elif mode == "投手":
+        pass
     st.write("### 年度別推移（未実装）")
 
 with tabs[3]:
@@ -681,8 +698,9 @@ with tabs[4]:
 with tabs[5]:
     if mode == "野手":
         st.info("野手モードは現在未実装です。")
-        
         st.write("### ブレイク選手（未実装）")
+    elif mode == "投手":
+        pass
 
 
 with tabs[6]:
@@ -705,10 +723,16 @@ with tabs[6]:
 
         # データ取得: df_batterを使う
         try:
-            df_player = df_batter[df_batter["選手名"] == selected_player].copy()
+            df_player = df_batter[
+                (df_batter["選手名"] == selected_player) &
+                (df_batter["team_name"].isin(selected_teams))
+            ].copy()
         except Exception:
             st.warning(f"{selected_player} のデータ取得でエラーが発生しました。")
             st.stop()
+
+        # チーム名も表示するヒント
+        st.markdown(f"**選手名**: {selected_player}（チーム候補: {', '.join(df_player['team_name'].unique())}）")
 
         # 画像ファイル名取得
         filename_candidate = ""
@@ -792,7 +816,10 @@ with tabs[6]:
 
         image_path = None
         image_dir = f"image/{selected_year}"
-        df_player = df[df["選手名"] == selected_player].copy()
+        df_player = df[
+            (df["選手名"] == selected_player) &
+            (df["team_name"].isin(selected_teams))
+        ].copy()
 
         if not df_player.empty:
             filename_candidate = df_player.sort_values("year", ascending=False).iloc[0].get("filename", "")
@@ -1049,9 +1076,659 @@ with tabs[7]:
             )
             st.markdown(styled_html, unsafe_allow_html=True)
 
-    # 投打別内訳テーブル
-    if mode == "投手":
+        # --- クラスタリング表示: 投手モードのときのみ ---
+        # ここからクラスタリング処理（t-SNEやKMeans等）を投手モードのみに限定して移動
+        if mode == "投手":
+            # 必要なライブラリのインポート
+            from sklearn.manifold import TSNE
+            from sklearn.cluster import KMeans
+            import numpy as np
+
+            st.write("### 投手クラスタリング（t-SNE + KMeans）")
+            # クラスタリングは年齢、投球回、各種指標（防御率、奪三振、与四球、WHIP）に基づいて分類
+            cluster_features = [ "防御率", "奪三率", "四球率", "WHIP","被本率", "被打率"]
+            df_cluster = df_pos.copy()
+            # 登板数が0の選手を除外
+            df_cluster["登板"] = pd.to_numeric(df_cluster["登板"], errors="coerce")
+            df_cluster = df_cluster[df_cluster["登板"] > 0]
+            # 必要なカラムが揃っているか確認
+            if all(f in df_cluster.columns for f in cluster_features):
+                cluster_data = df_cluster[cluster_features].apply(pd.to_numeric, errors="coerce").dropna()
+                if not cluster_data.empty and len(cluster_data) >= 2:
+                    # t-SNEのperplexity要件をチェック
+                    # if len(cluster_data) < 30:
+                    #     st.warning(f"クラスタリングには最低30選手以上のデータが必要です（現在: {len(cluster_data)}）")
+                    #     st.stop()
+                    # perplexityはサンプル数の1/3または最大30を目安に自動調整（最低5）
+                    tsne = TSNE(n_components=2, random_state=0, perplexity=min(30, max(5, len(cluster_data) // 3)))
+                    tsne_result = tsne.fit_transform(cluster_data)
+                    # KMeansによりt-SNEで圧縮した2次元データにクラスタ分けを実施
+                    n_clusters = st.slider("クラスタ数", 2, 6, 3, key="pitcher_cluster_n")
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+                    cluster_labels = kmeans.fit_predict(tsne_result)
+                    # 結果をdfに反映
+                    df_cluster_vis = df_cluster.loc[cluster_data.index].copy()
+                    df_cluster_vis["tsne_x"] = tsne_result[:, 0]
+                    df_cluster_vis["tsne_y"] = tsne_result[:, 1]
+                    df_cluster_vis["cluster"] = cluster_labels
+                    # 可視化
+                    fig3, ax3 = plt.subplots()
+                    colors = plt.get_cmap("tab10", n_clusters)
+                    for i in range(n_clusters):
+                        d = df_cluster_vis[df_cluster_vis["cluster"] == i]
+                        ax3.scatter(d["tsne_x"], d["tsne_y"], label=f"クラスタ{i+1}", color=colors(i), alpha=0.7)
+                        for _, row in d.iterrows():
+                            ax3.text(row["tsne_x"], row["tsne_y"], row["選手名"], fontsize=7)
+                    ax3.set_title("投手クラスタリング（t-SNE + KMeans）")
+                    ax3.set_xlabel("t-SNE 1")
+                    ax3.set_ylabel("t-SNE 2")
+                    ax3.legend()
+                    st.pyplot(fig3)
+                else:
+                    st.info("クラスタリングに十分なデータがありません。")
+            else:
+                st.info("クラスタリングに必要な指標が不足しています。")
+
+        # 投打別内訳テーブル
         st.markdown("### 投打別内訳")
         throw_bat_summary = df_pos["投打分類"].value_counts().reset_index()
         throw_bat_summary.columns = ["投打", "人数"]
         st.dataframe(throw_bat_summary)
+
+
+#
+# # --- 外野サンプル表示 ---
+# st.markdown("### 外野選手のサンプル表示（全チーム）")
+
+# # df_defの読み込み（未定義エラー対策）
+# conn_def = sqlite3.connect("defense_stats.db")
+# df_def = pd.read_sql_query("SELECT * FROM defense_stats", conn_def)
+# conn_def.close()
+# df_def["position_group"] = df_def["ポジション"]
+# df_def["team_name"] = df_def["チーム"]
+
+# df_outfield_sample = df_def[df_def["position_group"] == "outfielder"].copy()
+# df_outfield_sample["出場"] = pd.to_numeric(df_outfield_sample["試合"], errors="coerce")
+# df_outfield_sample = df_outfield_sample.dropna(subset=["team_name", "選手名", "出場"])
+# df_outfield_sample = df_outfield_sample.sort_values(["team_name", "出場"], ascending=[True, False])
+
+# # 表示カラムに守備情報も含める
+# sample_cols = ["team_name", "選手名", "出場"]
+# if "失策" in df_outfield_sample.columns:
+#     sample_cols.append("失策")
+# if "守備率" in df_outfield_sample.columns:
+#     sample_cols.append("守備率")
+
+# st.dataframe(df_outfield_sample[sample_cols])
+
+# --- 新規タブ: ポジション別出場主力 ---
+with tabs[8]:
+    st.write("### 各チーム ポジション別 主力選手（守備+打撃）")
+
+    # --- チーム選択フィルタ追加 ---
+    team_options = sorted(df["team_name"].dropna().unique())
+    selected_teams_in_tab = [st.selectbox("表示するチームを選択", team_options)]
+
+    # 守備成績の読み込み
+    conn_def = sqlite3.connect("player_stats.db")
+    df_def = pd.read_sql_query("SELECT * FROM defense_stats", conn_def)
+    conn_def.close()
+    # 「outfielder」としてすでに統一されているためそのまま使用
+    df_def["position_group"] = df_def["ポジション"]
+
+    # バッティング成績の読み込み
+    df_bat_all = load_batter_data()
+    df_def["team_name"] = df_def["チーム"]
+
+    # === 能力データの読み込み・マージ ===
+    df_ability = load_ability_data()
+    df_ability["year"] = pd.to_numeric(df_ability["year"], errors="coerce")
+    df_ability = df_ability[df_ability["year"] == selected_year]
+
+    ability_cols = [
+        "選手名", "team_name", "Left", "Right", "center",
+        "first", "second", "short", "third", "catcher"
+    ]
+
+    # 各チーム・ポジションで最も出場数が多い選手を抽出
+    df_def["出場"] = pd.to_numeric(df_def["試合"], errors="coerce")
+    df_def = df_def.dropna(subset=["team_name", "position_group", "選手名", "出場"])
+    df_def_ranked = df_def.sort_values("出場", ascending=False)
+
+    # 各チーム・ポジションごとに、出場数が合計110以上になるよう選手を抽出
+    top_players_list = []
+    non_outfield_df = df_def_ranked[df_def_ranked["position_group"] != "outfielder"]
+
+    for (team, pos), group in non_outfield_df.groupby(["team_name", "position_group"]):
+        group_sorted = group.sort_values("出場", ascending=False)
+        total = 0
+        rows = []
+        for _, row in group_sorted.iterrows():
+            rows.append(row)
+            total += row["出場"]
+            if total >= 110:
+                break
+        top_players_list.extend(rows)
+
+    top_players = pd.DataFrame(top_players_list)
+
+    # 外野は合計330試合以上になるまで選出
+    outfield_players_list = []
+    outfield_df = df_def_ranked[df_def_ranked["position_group"] == "outfielder"]
+
+    for team, group in outfield_df.groupby("team_name"):
+        group_sorted = group.sort_values("出場", ascending=False)
+        total = 0
+        rows = []
+        for _, row in group_sorted.iterrows():
+            rows.append(row)
+            total += row["出場"]
+            if total >= 330:
+                break
+        outfield_players_list.extend(rows)
+
+    outfield_top = pd.DataFrame(outfield_players_list)
+    outfield_top["position_group"] = "外野"
+    outfield_top["ポジション"] = "外野"
+    # --- フィルタ前のデータを保持（ベストナイン用） ---
+    top_players_raw = top_players.copy()
+    outfield_top_raw = outfield_top.copy()
+    # === フィルタリング追加ここから ===
+    # チーム選択フィルタを top_players, outfield_top に適用
+    top_players = top_players[top_players["team_name"].isin(selected_teams_in_tab)]
+    outfield_top = outfield_top[outfield_top["team_name"].isin(selected_teams_in_tab)]
+    # === フィルタリング追加ここまで ===
+
+    # 外野も結合
+    # 空・全NAデータフレームを除外し、全NA列も除去して結合
+    top_players_full = pd.concat(
+        [df.dropna(how="all", axis=1) for df in [top_players, outfield_top] if not df.empty],
+        ignore_index=True
+    )
+
+    # ポジション名の日本語化（top_players_full 側にも適用）
+    top_players_full["ポジション"] = top_players_full["ポジション"].replace({
+        "outfielder": "外野",
+        "catcher": "捕手",
+        "first": "一塁",
+        "second": "二塁",
+        "third": "三塁",
+        "short": "遊撃"
+    })
+
+    # 守備情報列を選定（例：失策、守備率、捕手固有指標も含む）
+    defense_cols = ["選手名", "チーム", "ポジション", "試合", "失策", "守備率", "捕逸", "被盗塁企画", "許盗塁", "盗塁刺", "盗阻率"]
+    df_def_info = df_def[defense_cols].copy()
+    df_def_info["team_name"] = df_def_info["チーム"]
+    # ポジション名の統一（英語→日本語）
+    df_def_info["ポジション"] = df_def_info["ポジション"].replace({
+        "outfielder": "外野",
+        "catcher": "捕手",
+        "first": "一塁",
+        "second": "二塁",
+        "third": "三塁",
+        "short": "遊撃"
+    })
+
+    # バッティング情報とマージ
+    df_bat_all["year"] = pd.to_numeric(df_bat_all["year"], errors="coerce")
+    df_bat_latest = df_bat_all[df_bat_all["year"] == selected_year]
+
+    # 守備情報を追加（top_players_fullにマージ）
+    df_combined = pd.merge(
+        top_players_full,
+        df_def_info,
+        on=["選手名", "team_name", "ポジション"],
+        how="left",
+        suffixes=("", "_def")
+    )
+
+    # バッティング情報とマージ
+    df_merged = pd.merge(
+        df_combined,
+        df_bat_latest[["選手名", "team_name", "打率", "本塁打", "打点", "OPS"]],
+        on=["選手名", "team_name"],
+        how="left"
+    )
+
+    # 能力データをマージ
+    df_merged = pd.merge(
+        df_merged,
+        df_ability[ability_cols],
+        on=["選手名", "team_name"],
+        how="left"
+    )
+
+    # Remove defensive columns if present
+    cols_to_remove = ["守備スコア", "守備偏差値", "守備範囲能力"]
+    df_merged = df_merged.drop(columns=[col for col in cols_to_remove if col in df_merged.columns], errors="ignore")
+
+    # Calculate OPS偏差値 (global z-score, not by position)
+    if "OPS" in df_merged.columns:
+        df_merged["OPS"] = pd.to_numeric(df_merged["OPS"], errors="coerce")
+        ops_mean = df_merged["OPS"].mean()
+        ops_std = df_merged["OPS"].std(ddof=0)
+        if ops_std != 0:
+            df_merged["OPS偏差値"] = ((df_merged["OPS"] - ops_mean) / ops_std * 10 + 50).round(2)
+        else:
+            df_merged["OPS偏差値"] = 50
+    # Prepare display columns (remove defensive info, add OPS偏差値)
+    display_cols = [
+        "team_name", "ポジション", "選手名", "出場", "打率", "本塁打", "打点", "OPS"
+    ]
+    # Add OPS偏差値 if not present
+    if "OPS偏差値" in df_merged.columns and "OPS偏差値" not in display_cols:
+        display_cols.append("OPS偏差値")
+    # Add positional ability columns if present
+    for col in ["Left", "Right", "center", "first", "second", "short", "third", "catcher"]:
+        if col in df_merged.columns and col not in display_cols:
+            display_cols.append(col)
+    display_cols = [col for col in display_cols if col in df_merged.columns]
+    st.dataframe(df_merged[display_cols])
+
+    # --- 🔥 ベストバッティングナイン（OPS順） ---
+    st.write("### 🔥 ベストバッティングナイン（OPS順）")
+    selected_league_for_best9 = st.radio("リーグを選択", ["セ・リーグ", "パ・リーグ"], horizontal=True)
+
+    # リーグ定義
+    SE_TEAMS = ["giants", "hanshin", "dragons", "baystars", "swallows", "carp"]
+    PA_TEAMS = ["hawks", "lions", "eagles", "marines", "Buffaloes", "fighters"]
+
+    # 🔥 ベストナイン用に全チーム分のdfを用意（選択チームフィルタなし）
+    top_players_all = pd.concat(
+        [df.dropna(how="all", axis=1) for df in [top_players_raw, outfield_top_raw] if not df.empty],
+        ignore_index=True
+    )
+    top_players_all["ポジション"] = top_players_all["ポジション"].replace({
+        "outfielder": "外野",
+        "catcher": "捕手",
+        "first": "一塁",
+        "second": "二塁",
+        "third": "三塁",
+        "short": "遊撃"
+    })
+
+    # 守備・打撃・能力をマージ
+    df_combined_all = pd.merge(
+        top_players_all,
+        df_def_info,
+        on=["選手名", "team_name", "ポジション"],
+        how="left"
+    )
+    df_combined_all = pd.merge(
+        df_combined_all,
+        df_bat_latest[["選手名", "team_name", "打率", "本塁打", "打点", "OPS"]],
+        on=["選手名", "team_name"],
+        how="left"
+    )
+    df_combined_all = pd.merge(
+        df_combined_all,
+        df_ability[ability_cols],
+        on=["選手名", "team_name"],
+        how="left"
+    )
+    # --- 表示用ポジション列を追加 ---
+    def split_outfielder_position(row):
+        if row["ポジション"] != "外野":
+            return row["ポジション"]
+        vals = {
+            "左": pd.to_numeric(row.get("Left", 0), errors="coerce") or 0,
+            "中": pd.to_numeric(row.get("center", 0), errors="coerce") or 0,
+            "右": pd.to_numeric(row.get("Right", 0), errors="coerce") or 0
+        }
+        best_pos = max(vals, key=vals.get)
+        # 1文字→フル日本語表記
+        return {"左": "左", "中": "中", "右": "右"}[best_pos]
+    df_combined_all["表示用ポジション"] = df_combined_all.apply(split_outfielder_position, axis=1)
+
+    # OPS偏差値計算（全体ベース）
+    if "OPS" in df_combined_all.columns:
+        df_combined_all["OPS"] = pd.to_numeric(df_combined_all["OPS"], errors="coerce")
+        ops_mean = df_combined_all["OPS"].mean()
+        ops_std = df_combined_all["OPS"].std(ddof=0)
+        df_combined_all["OPS偏差値"] = ((df_combined_all["OPS"] - ops_mean) / ops_std * 10 + 50).round(2)
+
+    # ベストナイン抽出は df_combined_all から行う
+    df_best_source = df_combined_all[df_combined_all["team_name"].isin(SE_TEAMS if selected_league_for_best9 == "セ・リーグ" else PA_TEAMS)]
+
+    def get_best_nine(df):
+        # ポジション列名を"ポジション"に統一
+        df = df.dropna(subset=["OPS", "ポジション"])
+        best_nine = []
+        positions = ["捕手", "一塁", "二塁", "三塁", "遊撃", "左", "中", "右"]
+        for pos in positions:
+            df_pos = df[df["表示用ポジション"] == pos]
+            if not df_pos.empty:
+                best = df_pos.sort_values("OPS", ascending=False).iloc[0]
+                best_nine.append(best)
+        return pd.DataFrame(best_nine)
+
+    df_best = get_best_nine(df_best_source)
+    # 表示用: ポジション列名を"position"でなく"ポジション"に
+    display_best_cols = ["ポジション", "選手名", "team_name", "OPS"]
+    df_best_display = df_best[display_best_cols] if all(c in df_best.columns for c in display_best_cols) else df_best
+    st.dataframe(df_best_display)
+
+
+# --- 新規タブ: タイトル・順位 ---
+with tabs[9]:
+    st.write("### 🏆 各リーグタイトル & 順位表")
+
+    # df_batterをここで再読み込み（必要な列が存在しないことへの対処）
+    df_batter = load_batter_data()
+
+    league = st.radio("リーグを選択", ["セ・リーグ", "パ・リーグ"], horizontal=True, key="league_rank_tab")
+
+    SE_TEAMS = ["giants", "hanshin", "dragons", "baystars", "swallows", "carp"]
+    PA_TEAMS = ["hawks", "lions", "eagles", "marines", "Buffaloes", "fighters"]
+
+    league_teams = SE_TEAMS if league == "セ・リーグ" else PA_TEAMS
+
+    # チーム名列の確認と補正
+    if "チーム" in df_batter.columns and "team_name" not in df_batter.columns:
+        df_batter = df_batter.rename(columns={"チーム": "team_name"})
+    # debug print
+    # print("=== df_batter columns ===")
+    # print(df_batter.columns.tolist())
+
+    # Ensure 'year' column exists and is numeric
+    df_batter["year"] = pd.to_numeric(df_batter.get("year", pd.NA), errors="coerce")
+    # チーム別打撃指標（OPSなど）
+    df_bat_league = df_batter[(df_batter["year"] == selected_year) & (df_batter["team_name"].isin(league_teams))].copy()
+    df_bat_league["OPS"] = pd.to_numeric(df_bat_league["OPS"], errors="coerce")
+    df_bat_league["打数"] = pd.to_numeric(df_bat_league["打数"], errors="coerce")
+    df_bat_league = df_bat_league.dropna(subset=["OPS", "打数"])
+    df_bat_league["weighted_OPS"] = df_bat_league["OPS"] * df_bat_league["打数"]
+    df_bat_team = df_bat_league.groupby("team_name").agg({
+        "weighted_OPS": "sum",
+        "打数": "sum"
+    }).reset_index()
+    df_bat_team["OPS（加重平均）"] = df_bat_team["weighted_OPS"] / df_bat_team["打数"]
+    df_bat_team = df_bat_team[["team_name", "OPS（加重平均）"]].sort_values("OPS（加重平均）", ascending=False)
+    df_bat_team.columns = ["チーム", "OPS（加重平均）"]
+
+    # チーム別投手勝ち星
+    df_pitch_league = df[(df["year"] == selected_year) & (df["team_name"].isin(league_teams))].copy()
+    df_pitch_league["勝"] = pd.to_numeric(df_pitch_league["勝"], errors="coerce")
+    df_win_team = df_pitch_league.groupby("team_name")["勝"].sum().dropna().sort_values(ascending=False).reset_index()
+    df_win_team.columns = ["チーム", "勝利数"]
+    # --- 敗北数・引き分け数追加 ---
+    df_pitch_league["敗"] = pd.to_numeric(df_pitch_league["敗"], errors="coerce")
+    df_lose_team = df_pitch_league.groupby("team_name")["敗"].sum().dropna().reset_index()
+    df_lose_team.columns = ["チーム", "敗北数"]
+    df_win_team = pd.merge(df_win_team, df_lose_team, on="チーム", how="left")
+    df_win_team["引き分け"] = 143 - df_win_team["勝利数"] - df_win_team["敗北数"]
+    # 表示カラム整理
+    df_win_team = df_win_team[["チーム", "勝利数", "敗北数", "引き分け"]]
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### 打撃成績：OPS（加重平均）")
+        st.dataframe(df_bat_team)
+
+    with col2:
+        st.markdown("#### 🥇順位表（チーム勝利数ベース）")
+        st.dataframe(df_win_team)
+
+
+
+# --- 新規タブ: 🧠 クラスタ分析（リーグ・チーム別） ---
+with tabs[10]:
+    st.write("### 🧠 クラスタ分析（リーグ・チーム別）")
+
+    # 投手・野手で分岐
+    if mode == "投手":
+        league_tabs = st.tabs(["⚾ 全体（12球団）", "🔵 セ・リーグ", "🟡 パ・リーグ"])
+        TEAM_SE = ["giants", "hanshin", "dragons", "baystars", "swallows", "carp"]
+        TEAM_PA = ["hawks", "lions", "eagles", "marines", "Buffaloes", "fighters"]
+
+        for idx, (tab, league_name, team_filter) in enumerate(zip(
+            league_tabs,
+            ["全体", "セ・リーグ", "パ・リーグ"],
+            [None, TEAM_SE, TEAM_PA]
+        )):
+            with tab:
+                st.write(f"#### {league_name} クラスタリング結果")
+
+                # チームフィルタ適用
+                df_cluster = df.copy()
+                if team_filter:
+                    df_cluster = df_cluster[df_cluster["team_name"].isin(team_filter)]
+
+                # 前処理
+                cluster_features = ["防御率", "奪三率", "四球率", "WHIP", "被本率", "被打率"]
+                df_cluster["登板"] = pd.to_numeric(df_cluster["登板"], errors="coerce")
+                df_cluster = df_cluster[df_cluster["登板"] > 0]
+                cluster_data = df_cluster[cluster_features].apply(pd.to_numeric, errors="coerce").dropna()
+
+                if cluster_data.shape[0] < 2:
+                    st.warning("クラスタリングに必要なデータが不足しています。")
+                    continue
+
+                from sklearn.manifold import TSNE
+                from sklearn.cluster import KMeans
+                import matplotlib.pyplot as plt
+                import numpy as np
+
+                perplexity = min(30, max(5, len(cluster_data) // 3))
+                tsne = TSNE(n_components=2, random_state=0, perplexity=perplexity)
+                tsne_result = tsne.fit_transform(cluster_data)
+
+                n_clusters = st.slider(f"{league_name}のクラスタ数", 2, 6, 3, key=f"tsne_n_clusters_{idx}")
+                kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+                cluster_labels = kmeans.fit_predict(tsne_result)
+
+                df_vis = df_cluster.loc[cluster_data.index].copy()
+                df_vis["tsne_x"] = tsne_result[:, 0]
+                df_vis["tsne_y"] = tsne_result[:, 1]
+                df_vis["cluster"] = cluster_labels
+
+                # 可視化
+                fig, ax = plt.subplots()
+                cmap = plt.get_cmap("tab10", n_clusters)
+                for i in range(n_clusters):
+                    d = df_vis[df_vis["cluster"] == i]
+                    ax.scatter(d["tsne_x"], d["tsne_y"], label=f"クラスタ{i+1}", color=cmap(i), alpha=0.7)
+                    for _, row in d.iterrows():
+                        ax.text(row["tsne_x"], row["tsne_y"], row["選手名"], fontsize=7)
+                ax.set_title(f"{league_name} クラスタリング（t-SNE + KMeans）")
+                ax.legend()
+                st.pyplot(fig)
+
+                # クラスタ中心点の特徴表示
+                st.markdown("#### 📊 各クラスタの平均成績（中心点特徴）")
+                # 重複列を防ぐために df_vis 側の重複列を削除して結合
+                df_vis_clean = df_vis.drop(columns=[col for col in cluster_data.columns if col in df_vis.columns], errors="ignore")
+                df_vis_with_features = pd.concat([df_vis_clean.reset_index(drop=True), cluster_data.reset_index(drop=True)], axis=1)
+                cluster_centers = df_vis_with_features.groupby("cluster")[cluster_features].mean().round(2)
+                cluster_centers.index = [f"クラスタ{i+1}" for i in cluster_centers.index]
+                st.dataframe(cluster_centers)
+
+                # クラスタタイプ名称分類関数（z-score基準）
+                def classify_cluster_type(row, z_df):
+                    try:
+                        z_row = z_df.loc[row.name]
+                        if z_row["奪三率"] > 0.5 and z_row["四球率"] > 0.2:
+                            return "パワー型"
+                        elif z_row["四球率"] < -0.5 and z_row["奪三率"] > 0.5:
+                            return "エース型"
+                        elif z_row["WHIP"] < -0.5 and z_row["四球率"] < -0.3:
+                            return "技巧型"
+                        elif z_row["被打率"] > 0.5:
+                            return "飛翔型"
+                        elif z_row["防御率"] > 0.7:
+                            return "2軍レベル"
+                        else:
+                            return "バランス型"
+                    except:
+                        return "未分類"
+
+                # z-score計算
+                cluster_centers_z = cluster_centers.apply(zscore)
+
+                # クラスタタイプ名称分類
+                cluster_type_names = [
+                    classify_cluster_type(row, cluster_centers_z)
+                    for _, row in cluster_centers.iterrows()
+                ]
+
+                st.markdown("#### 🧩 クラスタタイプ（仮称）")
+                for i, style in zip(cluster_centers.index, cluster_type_names):
+                    st.write(f"{i}: {style}")
+
+                # チーム別クラスタ構成比
+                st.markdown("#### 📈 チーム別クラスタ構成比")
+                cluster_counts = df_vis.groupby(["team_name", "cluster"]).size().unstack(fill_value=0)
+                cluster_counts_ratio = cluster_counts.div(cluster_counts.sum(axis=1), axis=0)
+
+                fig2, ax2 = plt.subplots(figsize=(10, 4))
+                cluster_counts_ratio.plot(kind="bar", stacked=True, ax=ax2, colormap="tab10")
+                ax2.set_ylabel("割合")
+                ax2.set_title(f"{league_name} チーム別クラスタ構成比")
+                ax2.legend(title="クラスタ")
+                st.pyplot(fig2)
+
+    elif mode == "野手":
+        # 野手クラスタリング
+        st.write("#### 野手クラスタリング（t-SNE + KMeans）")
+        league_tabs = st.tabs(["⚾ 全体（12球団）", "🔵 セ・リーグ", "🟡 パ・リーグ"])
+        TEAM_SE = ["giants", "hanshin", "dragons", "baystars", "swallows", "carp"]
+        TEAM_PA = ["hawks", "lions", "eagles", "marines", "Buffaloes", "fighters"]
+
+        for idx, (tab, league_name, team_filter) in enumerate(zip(
+            league_tabs,
+            ["全体", "セ・リーグ", "パ・リーグ"],
+            [None, TEAM_SE, TEAM_PA]
+        )):
+            with tab:
+                st.write(f"#### {league_name} クラスタリング結果")
+
+                # データロード
+                df_bat = load_batter_data()
+                df_bat["year"] = pd.to_numeric(df_bat["year"], errors="coerce")
+                df_bat["打席"] = pd.to_numeric(df_bat["打席"], errors="coerce")
+                # チームフィルタ適用
+                if team_filter:
+                    df_bat = df_bat[df_bat["team_name"].isin(team_filter)]
+                # 年度フィルタ（最新年度のみ）
+                df_bat = df_bat[df_bat["year"] == selected_year]
+                # 打席100以上でフィルタ
+                df_bat = df_bat[df_bat["打席"] >= 100]
+                cluster_features = ["打率", "出塁率", "長打率", "本塁打", "三振"]
+                # 必要なカラムを数値に
+                for col in cluster_features:
+                    df_bat[col] = pd.to_numeric(df_bat[col], errors="coerce")
+                cluster_data = df_bat[cluster_features].dropna()
+                if cluster_data.shape[0] < 2:
+                    st.warning("クラスタリングに必要なデータが不足しています。")
+                    continue
+                from sklearn.manifold import TSNE
+                from sklearn.cluster import KMeans
+                import matplotlib.pyplot as plt
+                import numpy as np
+
+                perplexity = min(30, max(5, len(cluster_data) // 3))
+                tsne = TSNE(n_components=2, random_state=0, perplexity=perplexity)
+                tsne_result = tsne.fit_transform(cluster_data)
+
+                n_clusters = st.slider(f"{league_name}のクラスタ数", 2, 6, 3, key=f"tsne_n_clusters_bat_{idx}")
+                kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+                cluster_labels = kmeans.fit_predict(tsne_result)
+
+                df_vis = df_bat.loc[cluster_data.index].copy()
+                df_vis["tsne_x"] = tsne_result[:, 0]
+                df_vis["tsne_y"] = tsne_result[:, 1]
+                df_vis["cluster"] = cluster_labels
+
+                # 可視化
+                fig, ax = plt.subplots()
+                cmap = plt.get_cmap("tab10", n_clusters)
+                for i in range(n_clusters):
+                    d = df_vis[df_vis["cluster"] == i]
+                    ax.scatter(d["tsne_x"], d["tsne_y"], label=f"クラスタ{i+1}", color=cmap(i), alpha=0.7)
+                    for _, row in d.iterrows():
+                        ax.text(row["tsne_x"], row["tsne_y"], row["選手名"], fontsize=7)
+                ax.set_title(f"{league_name} クラスタリング（t-SNE + KMeans）")
+                ax.legend()
+                st.pyplot(fig)
+
+                # クラスタ中心点の特徴表示
+                st.markdown("#### 📊 各クラスタの平均成績（中心点特徴）")
+                # 重複列を防ぐために df_vis 側の重複列を削除して結合
+                df_vis_clean = df_vis.drop(columns=[col for col in cluster_data.columns if col in df_vis.columns], errors="ignore")
+                df_vis_with_features = pd.concat([df_vis_clean.reset_index(drop=True), cluster_data.reset_index(drop=True)], axis=1)
+                cluster_centers = df_vis_with_features.groupby("cluster")[cluster_features].mean().round(2)
+                cluster_centers.index = [f"クラスタ{i+1}" for i in cluster_centers.index]
+                st.dataframe(cluster_centers)
+
+                # クラスタタイプ名称分類関数（z-score基準, 指定ロジック）
+                def classify_batter_type_all(cluster_centers_z):
+                    # cluster_centers_z: DataFrame, index=f"クラスタ1" etc, rows=clusters, columns=features
+                    cluster_names = [None] * len(cluster_centers_z)
+                    used_types = set()
+
+                    def get_type_name(center_z, used_types):
+                        # center_z is a Series
+                        obp = center_z.get("出塁率", 0)
+                        avg = center_z.get("打率", 0)
+                        slg = center_z.get("長打率", 0)
+                        hr = center_z.get("本塁打", 0)
+                        so = center_z.get("三振", 0)
+
+
+                        if slg > 0.8 and obp > 0.8:
+                            return "最強型"
+                        elif  obp > 0.8:
+                            return "1番型"
+                        elif avg > 0.6 and obp < 0.6:
+                            return "アヘ単型"
+                        elif hr > 0.5 and so > 0.5:
+                            return "ウホウホ本塁打型"
+                        elif so >0.2:
+                            return "三振マシン"
+                        return "バランス型"
+
+                    # 1周目: 最強型と1番型だけ使う
+                    for i, (_, center_z) in enumerate(cluster_centers_z.iterrows()):
+                        name = get_type_name(center_z, used_types)
+                        if name in {"最強型", "1番型"} and name not in used_types:
+                            cluster_names[i] = name
+                            used_types.add(name)
+
+                    # 2周目: アヘ単型、ウホウホ長打型を 1クラスタに限定して使う
+                    for i, (_, center_z) in enumerate(cluster_centers_z.iterrows()):
+                        if cluster_names[i] is not None:
+                            continue
+                        name = get_type_name(center_z, used_types)
+                        if name in {"アヘ単型", "ウホウホ長打型"} and name not in used_types:
+                            cluster_names[i] = name
+                            used_types.add(name)
+
+                    # 3周目: 残りはバランス型で埋める
+                    for i in range(len(cluster_centers_z)):
+                        if cluster_names[i] is None:
+                            cluster_names[i] = "バランス型"
+
+                    return cluster_names
+
+                # z-score計算
+                cluster_centers_z = cluster_centers.apply(zscore)
+                # クラスタタイプ名称分類（優先度ルール）
+                cluster_type_names = classify_batter_type_all(cluster_centers_z)
+
+                st.markdown("#### 🧩 クラスタタイプ（仮称）")
+                for i, style in zip(cluster_centers.index, cluster_type_names):
+                    st.write(f"{i}: {style}")
+
+                # チーム別クラスタ構成比
+                st.markdown("#### 📈 チーム別クラスタ構成比")
+                cluster_counts = df_vis.groupby(["team_name", "cluster"]).size().unstack(fill_value=0)
+                cluster_counts_ratio = cluster_counts.div(cluster_counts.sum(axis=1), axis=0)
+
+                fig2, ax2 = plt.subplots(figsize=(10, 4))
+                cluster_counts_ratio.plot(kind="bar", stacked=True, ax=ax2, colormap="tab10")
+                ax2.set_ylabel("割合")
+                ax2.set_title(f"{league_name} チーム別クラスタ構成比")
+                ax2.legend(title="クラスタ")
+                st.pyplot(fig2)
