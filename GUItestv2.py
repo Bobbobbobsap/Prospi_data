@@ -793,9 +793,92 @@ with tabs[6]:
             st.markdown(f"**生年月日**: {latest_birth}")
             st.markdown(f"**年齢**: {latest_age}")
         # 年度別成績表示
-        if "year" in df_player.columns:
-            df_player["year"] = pd.to_numeric(df_player["year"], errors="coerce")
-            df_player = df_player.sort_values("year")
+        latest_year = df_player["year"].max()
+        df_player = df_player[df_player["year"] == latest_year]
+        df_player = df_player.sort_values("year")
+        # --- BABIPを計算して追加 ---
+        try:
+            H = pd.to_numeric(df_player["安打"], errors="coerce")
+            HR = pd.to_numeric(df_player["本塁打"], errors="coerce")
+            AB = pd.to_numeric(df_player["打数"], errors="coerce")
+            SO = pd.to_numeric(df_player["三振"], errors="coerce")
+            SF = pd.to_numeric(df_player["犠飛"], errors="coerce")
+            denominator = AB - SO - HR + SF
+            df_player["BABIP"] = ((H - HR) / denominator).round(3)
+        except Exception as e:
+            df_player["BABIP"] = None
+
+        # レーダーチャートの表示（主要打撃指標）
+        st.subheader("📊 レーダーチャートによる成績可視化")
+
+        radar_cols = ["打率", "出塁率", "長打率", "本塁打", "三振率", "盗塁", "OPS"]
+        radar_raw = {col: pd.to_numeric(latest.get(col), errors="coerce") for col in radar_cols}
+        def normalize_radar_values(raw_dict):
+            norm = {}
+            norm["打率"] = max(0.0, min(1.0, (raw_dict["打率"] - 0.2) / (0.35 - 0.2)))
+            norm["出塁率"] = min(raw_dict["出塁率"] / 0.45, 1.0)
+            norm["長打率"] = max(0.0, min(1.0, (raw_dict["長打率"] - 0.2) / (0.65 - 0.2)))
+            norm["本塁打"] = min(raw_dict["本塁打"] / 40, 1.0)
+            norm["三振率"] = max(0.0, min(1.0, (0.35 - raw_dict["三振率"]) / (0.35 - 0.1)))
+            norm["盗塁"] = min(raw_dict["盗塁"] / 30, 1.0)
+            norm["OPS"] = max(0.0, min(1.0, (raw_dict["OPS"] - 0.5) / (1.2 - 0.5)))
+            return [norm[k] for k in ["打率", "出塁率", "長打率", "本塁打", "三振率", "盗塁", "OPS"]]
+
+        if any(pd.isna(list(radar_raw.values()))):
+            st.warning("一部の指標が欠損しているため、レーダーチャートを表示できません。")
+        else:
+            import matplotlib.pyplot as plt
+            import numpy as np
+
+            def plot_radar_chart(labels, values, title="レーダーチャート"):
+                num_vars = len(labels)
+                angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+                values = values + values[:1]
+                angles = angles + angles[:1]
+
+                fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+                ax.plot(angles, values, color="tab:blue", linewidth=2)
+                ax.fill(angles, values, color="tab:blue", alpha=0.25)
+                ax.set_thetagrids(np.degrees(angles[:-1]), labels)
+                ax.set_ylim(0, 1.0) 
+                ax.set_title(title)
+                ax.grid(True)
+                return fig
+
+            scaled = normalize_radar_values(radar_raw)
+            fig = plot_radar_chart(radar_cols, scaled, title=f"{selected_player}（{latest_year}）")
+            st.pyplot(fig)
+        drop_cols = [col for col in ["group_file"] if col in df_player.columns]
+        st.write(f"### 昨年の成績一覧")
+        base_cols = ["year", "選手名"]
+
+        st.subheader("【基本打撃成績】")
+        cols1 = ['打率', '試合', '打席', '打数', '安打', '単打', '二塁打', '三塁打', '本塁打', '本打率', '塁打', '長打率', 'OPS']
+        st.dataframe(df_player[[c for c in cols1 if c in df_player.columns]])
+
+        st.subheader("【得点圏・満塁成績】")
+        cols2 = ['打点', '得点圏打率', '圏率差', '圏打数', '圏安打', '満塁率', '満率差', '満塁数', '満塁安', '得点圏差']
+        st.dataframe(df_player[ [c for c in cols2 if c in df_player.columns]])
+
+        st.subheader("【対右・対左の傾向】")
+        cols3 = ['対右率', '右率差', '対右数', '対右安', '対左率', '左率差', '対左数', '対左安']
+        st.dataframe(df_player[ [c for c in cols3 if c in df_player.columns]])
+
+        st.subheader("【出塁・三振・選球眼】")
+        cols4 = ['出塁率', '四球', '死球', '三振', '三振率', 'BB%', 'K%', 'BB/K', 'IsoD', 'アダム・ダン率']
+        st.dataframe(df_player[ [c for c in cols4 if c in df_player.columns]])
+
+        st.subheader("【走塁・盗塁】")
+        cols5 = ['盗企数', '盗塁', '盗塁率', '盗塁死', '赤星式盗塁']
+        st.dataframe(df_player[[c for c in cols5 if c in df_player.columns]])
+
+        st.subheader("【小技・併殺打】")
+        cols6 = ['犠打', '犠飛', '併殺打', '併打率']
+        st.dataframe(df_player[ [c for c in cols6 if c in df_player.columns]])
+
+        st.subheader("【その他】")
+        cols7 = ['連続安', '連試出', '連無安', '猛打賞', 'PA/HR', '得点', '内野安', '内安率', 'IsoP','BABIP']
+        st.dataframe(df_player[base_cols + [c for c in cols7 if c in df_player.columns]])
 
         st.write(f"#### 年度別成績一覧（{selected_player}）")
         drop_cols = [col for col in ["group_file"] if col in df_player.columns]
@@ -874,11 +957,88 @@ with tabs[6]:
             st.markdown(f"**ドラフト**: {latest_draft}")
             st.markdown(f"**生年月日**: {latest_birth}")
             st.markdown(f"**年齢**: {latest_age}")
-        # 年度別成績表示
-        df_player["year"] = pd.to_numeric(df_player["year"], errors="coerce")
-        df_player = df_player.sort_values("year")
 
-        st.write(f"#### 年度別成績一覧（{selected_player}）")
+        # 投手レーダーチャートの表示
+        st.subheader("📊 レーダーチャートによる成績可視化")
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        radar_cols = ["防御率", "奪三率", "BB/9", "WHIP", "QS", "被打率", "被本率"]
+        radar_raw = {col: pd.to_numeric(latest.get(col), errors="coerce") for col in radar_cols}
+
+        def normalize_pitcher_radar(raw):
+            norm = {}
+            # 防御率: 1.00〜5.00（低いほど良い）
+            norm["防御率"] = max(0.0, min(1.0, (5.0 - raw["防御率"]) / (5.0 - 1.0)))
+            # 奪三率: 7.0〜11.0（高いほど良い）
+            norm["奪三率"] = max(0.0, min(1.0, (raw["奪三率"] - 3.0) / (11.0 - 3.0)))
+            # 四球率: 0.1〜0.5（低いほど良い）
+            norm["BB/9"] = max(0.0, min(1.0, (9 - raw["BB/9"]) / (9 - 3)))
+            # WHIP: 1.0〜2.0（低いほど良い）
+            norm["WHIP"] = max(0.0, min(1.0, (2.0 - raw["WHIP"]) / (2.0 - 1.0)))
+            # QS: 0〜20（高いほど良い）
+            norm["QS"] = min(raw["QS"] / 20.0, 1.0)
+            # 被打率: 0.2〜0.35（低いほど良い）
+            norm["被打率"] = max(0.0, min(1.0, (0.35 - raw["被打率"]) / (0.35 - 0.2)))
+            # 被本率: 0.0〜1.0（低いほど良い）
+            norm["被本率"] = max(0.0, min(1.0, (1.0 - raw["被本率"]) / 1.0))
+            return [norm[k] for k in ["防御率", "奪三率", "BB/9", "WHIP", "QS", "被打率", "被本率"]]
+
+        if any(pd.isna(list(radar_raw.values()))):
+            st.warning("一部の指標が欠損しているため、レーダーチャートを表示できません。")
+        else:
+            def plot_radar_chart(labels, values, title="レーダーチャート"):
+                num_vars = len(labels)
+                angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+                values = values + values[:1]
+                angles = angles + angles[:1]
+                fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+                ax.plot(angles, values, color="tab:blue", linewidth=2)
+                ax.fill(angles, values, color="tab:blue", alpha=0.25)
+                ax.set_thetagrids(np.degrees(angles[:-1]), labels)
+                ax.set_ylim(0, 1.0)
+                ax.set_title(title)
+                ax.grid(True)
+                return fig
+            latest_year = df_player["year"].max()
+            scaled = normalize_pitcher_radar(radar_raw)
+            fig = plot_radar_chart(radar_cols, scaled, title=f"{selected_player}（{latest_year}）")
+            st.pyplot(fig)
+
+
+
+        # 年度別成績表示
+        latest_year = df_player["year"].max()
+        df_player = df_player[df_player["year"] == latest_year]
+        df_player = df_player.sort_values("year")
+        drop_cols = [col for col in ["group_file"] if col in df_player.columns]
+        st.write(f"### 昨年の成績一覧")
+        df_player = df_player.drop(columns=drop_cols)
+
+        base_cols = ["year", "選手名"]
+
+        st.subheader("【登板・勝敗・防御率】")
+        cols1 = ['投球回', '勝', '敗', '勝率', '先発', '登板', '防御率']
+        st.dataframe(df_player[base_cols + [c for c in cols1 if c in df_player.columns]])
+
+        st.subheader("【完封・完投・QS関連】")
+        cols2 = ['完封', '完投', 'QS', 'QS率', 'HQS', 'HQS率', '被安打', '被打率', '被本率']
+        # st.dataframe(df_player[base_cols + [c for c in cols2 if c in df_player.columns]])
+        st.dataframe(df_player[[c for c in cols2 if c in df_player.columns]])
+        st.subheader("【与四球・奪三振・WHIP】")
+        cols3 = ['与四球', 'BB/9', '奪三振', 'K/9', 'K/BB', 'K-BB%', 'WHIP']
+        st.dataframe(df_player[[c for c in cols3 if c in df_player.columns]])
+
+        st.subheader("【得点圏・左右打者の被打率】")
+        cols4 = ['圏打率', '圏安打', '圏率差', '右被安', '右被率', '右率差', '左被安', '左被率', '左率差']
+        st.dataframe(df_player[ [c for c in cols4 if c in df_player.columns]])
+
+        st.subheader("【死球・盗塁・暴投】")
+        cols5 = ['死球率', '暴投', '被盗企', '許盗数', '許盗率']
+        st.dataframe(df_player[[c for c in cols5 if c in df_player.columns]])
+
+        st.write(f"##### 年度別成績一覧（{selected_player}）")
         drop_cols = [col for col in ["group_file"] if col in df_player.columns]
         if "filename" in df_player.columns:
             drop_cols.append("filename")
