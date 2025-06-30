@@ -960,52 +960,57 @@ with tabs[6]:
             st.markdown(f"**年齢**: {latest_age}")
 
         # 投手レーダーチャートの表示
-        st.subheader("📊 レーダーチャートによる成績可視化")
-
-        import numpy as np
-        import matplotlib.pyplot as plt
-
-        radar_cols = ["防御率", "奪三率", "BB/9", "WHIP", "QS", "被打率", "被本率"]
-        radar_raw = {col: pd.to_numeric(latest.get(col), errors="coerce") for col in radar_cols}
-
-        def normalize_pitcher_radar(raw):
-            norm = {}
-            # 防御率: 1.00〜5.00（低いほど良い）
-            norm["防御率"] = max(0.0, min(1.0, (5.0 - raw["防御率"]) / (5.0 - 1.0)))
-            # 奪三率: 7.0〜11.0（高いほど良い）
-            norm["奪三率"] = max(0.0, min(1.0, (raw["奪三率"] - 3.0) / (11.0 - 3.0)))
-            # 四球率: 0.1〜0.5（低いほど良い）
-            norm["BB/9"] = max(0.0, min(1.0, (9 - raw["BB/9"]) / (9 - 3)))
-            # WHIP: 1.0〜2.0（低いほど良い）
-            norm["WHIP"] = max(0.0, min(1.0, (2.0 - raw["WHIP"]) / (2.0 - 1.0)))
-            # QS: 0〜20（高いほど良い）
-            norm["QS"] = min(raw["QS"] / 20.0, 1.0)
-            # 被打率: 0.2〜0.35（低いほど良い）
-            norm["被打率"] = max(0.0, min(1.0, (0.35 - raw["被打率"]) / (0.35 - 0.2)))
-            # 被本率: 0.0〜1.0（低いほど良い）
-            norm["被本率"] = max(0.0, min(1.0, (1.0 - raw["被本率"]) / 1.0))
-            return [norm[k] for k in ["防御率", "奪三率", "BB/9", "WHIP", "QS", "被打率", "被本率"]]
-
-        if any(pd.isna(list(radar_raw.values()))):
-            st.warning("一部の指標が欠損しているため、レーダーチャートを表示できません。")
+        # 追加: 投球回が0の場合はNo Data表示
+        if latest.get("IP_") == 0:
+            st.subheader("📊 レーダーチャートによる成績可視化")
+            st.markdown("**No Data**（投球回が0のため）")
         else:
-            def plot_radar_chart(labels, values, title="レーダーチャート"):
-                num_vars = len(labels)
-                angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-                values = values + values[:1]
-                angles = angles + angles[:1]
-                fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-                ax.plot(angles, values, color="tab:blue", linewidth=2)
-                ax.fill(angles, values, color="tab:blue", alpha=0.25)
-                ax.set_thetagrids(np.degrees(angles[:-1]), labels)
-                ax.set_ylim(0, 1.0)
-                ax.set_title(title)
-                ax.grid(True)
-                return fig
-            latest_year = df_player["year"].max()
-            scaled = normalize_pitcher_radar(radar_raw)
-            fig = plot_radar_chart(radar_cols, scaled, title=f"{selected_player}（{latest_year}）")
-            st.pyplot(fig)
+            st.subheader("📊 レーダーチャートによる成績可視化")
+
+            import numpy as np
+            import matplotlib.pyplot as plt
+
+            radar_cols = ["防御率", "奪三率", "BB/9", "WHIP", "QS", "被打率", "被本率"]
+            radar_raw = {col: pd.to_numeric(latest.get(col), errors="coerce") for col in radar_cols}
+
+            def normalize_pitcher_radar(raw):
+                norm = {}
+                # 防御率: 1.00〜5.00（低いほど良い）
+                norm["防御率"] = max(0.0, min(1.0, (5.0 - raw["防御率"]) / (5.0 - 1.0)))
+                # 奪三率: 7.0〜11.0（高いほど良い）
+                norm["奪三率"] = max(0.0, min(1.0, (raw["奪三率"] - 3.0) / (11.0 - 3.0)))
+                # 四球率: 0.1〜0.5（低いほど良い）
+                norm["BB/9"] = max(0.0, min(1.0, (9 - raw["BB/9"]) / (9 - 3)))
+                # WHIP: 1.0〜2.0（低いほど良い）
+                norm["WHIP"] = max(0.0, min(1.0, (2.0 - raw["WHIP"]) / (2.0 - 1.0)))
+                # QS: 0〜20（高いほど良い）
+                norm["QS"] = min(raw["QS"] / 20.0, 1.0)
+                # 被打率: 0.2〜0.35（低いほど良い）
+                norm["被打率"] = max(0.0, min(1.0, (0.35 - raw["被打率"]) / (0.35 - 0.2)))
+                # 被本率: 0.0〜1.0（低いほど良い）
+                norm["被本率"] = max(0.0, min(1.0, (1.0 - raw["被本率"]) / 1.0))
+                return [norm[k] for k in ["防御率", "奪三率", "BB/9", "WHIP", "QS", "被打率", "被本率"]]
+
+            if any(pd.isna(list(radar_raw.values()))):
+                st.warning("一部の指標が欠損しているため、レーダーチャートを表示できません。")
+            else:
+                def plot_radar_chart(labels, values, title="レーダーチャート"):
+                    num_vars = len(labels)
+                    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+                    values = values + values[:1]
+                    angles = angles + angles[:1]
+                    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+                    ax.plot(angles, values, color="tab:blue", linewidth=2)
+                    ax.fill(angles, values, color="tab:blue", alpha=0.25)
+                    ax.set_thetagrids(np.degrees(angles[:-1]), labels)
+                    ax.set_ylim(0, 1.0)
+                    ax.set_title(title)
+                    ax.grid(True)
+                    return fig
+                latest_year = df_player["year"].max()
+                scaled = normalize_pitcher_radar(radar_raw)
+                fig = plot_radar_chart(radar_cols, scaled, title=f"{selected_player}（{latest_year}）")
+                st.pyplot(fig)
 
 
 
