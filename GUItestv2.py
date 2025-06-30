@@ -809,53 +809,53 @@ with tabs[6]:
         except Exception as e:
             df_player["BABIP"] = None
 
-        # レーダーチャートの表示（主要打撃指標）
-        st.subheader("📊 レーダーチャートによる成績可視化")
+        # 打席が0ならレーダーチャートを表示しない
+        if latest.get("打席") != 0:
+            st.subheader("📊 レーダーチャートによる成績可視化")
+            radar_cols = ["打率", "出塁率", "長打率", "本塁打", "三振率", "盗塁", "OPS"]
+            radar_raw = {col: pd.to_numeric(latest.get(col), errors="coerce") for col in radar_cols}
+            def normalize_radar_values(raw_dict):
+                norm = {}
+                norm["打率"] = max(0.0, min(1.0, (raw_dict["打率"] - 0.2) / (0.35 - 0.2)))
+                norm["出塁率"] = min(raw_dict["出塁率"] / 0.45, 1.0)
+                norm["長打率"] = max(0.0, min(1.0, (raw_dict["長打率"] - 0.2) / (0.65 - 0.2)))
+                norm["本塁打"] = min(raw_dict["本塁打"] / 40, 1.0)
+                norm["三振率"] = max(0.0, min(1.0, (0.35 - raw_dict["三振率"]) / (0.35 - 0.1)))
+                norm["盗塁"] = min(raw_dict["盗塁"] / 30, 1.0)
+                norm["OPS"] = max(0.0, min(1.0, (raw_dict["OPS"] - 0.5) / (1.2 - 0.5)))
+                return [norm[k] for k in ["打率", "出塁率", "長打率", "本塁打", "三振率", "盗塁", "OPS"]]
 
-        radar_cols = ["打率", "出塁率", "長打率", "本塁打", "三振率", "盗塁", "OPS"]
-        radar_raw = {col: pd.to_numeric(latest.get(col), errors="coerce") for col in radar_cols}
-        def normalize_radar_values(raw_dict):
-            norm = {}
-            norm["打率"] = max(0.0, min(1.0, (raw_dict["打率"] - 0.2) / (0.35 - 0.2)))
-            norm["出塁率"] = min(raw_dict["出塁率"] / 0.45, 1.0)
-            norm["長打率"] = max(0.0, min(1.0, (raw_dict["長打率"] - 0.2) / (0.65 - 0.2)))
-            norm["本塁打"] = min(raw_dict["本塁打"] / 40, 1.0)
-            norm["三振率"] = max(0.0, min(1.0, (0.35 - raw_dict["三振率"]) / (0.35 - 0.1)))
-            norm["盗塁"] = min(raw_dict["盗塁"] / 30, 1.0)
-            norm["OPS"] = max(0.0, min(1.0, (raw_dict["OPS"] - 0.5) / (1.2 - 0.5)))
-            return [norm[k] for k in ["打率", "出塁率", "長打率", "本塁打", "三振率", "盗塁", "OPS"]]
+            if any(pd.isna(list(radar_raw.values()))):
+                st.warning("一部の指標が欠損しているため、レーダーチャートを表示できません。")
+            else:
+                import matplotlib.pyplot as plt
+                import numpy as np
 
-        if any(pd.isna(list(radar_raw.values()))):
-            st.warning("一部の指標が欠損しているため、レーダーチャートを表示できません。")
-        else:
-            import matplotlib.pyplot as plt
-            import numpy as np
+                def plot_radar_chart(labels, values, title="レーダーチャート"):
+                    num_vars = len(labels)
+                    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+                    values = values + values[:1]
+                    angles = angles + angles[:1]
 
-            def plot_radar_chart(labels, values, title="レーダーチャート"):
-                num_vars = len(labels)
-                angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-                values = values + values[:1]
-                angles = angles + angles[:1]
+                    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+                    ax.plot(angles, values, color="tab:blue", linewidth=2)
+                    ax.fill(angles, values, color="tab:blue", alpha=0.25)
+                    ax.set_thetagrids(np.degrees(angles[:-1]), labels)
+                    ax.set_ylim(0, 1.0) 
+                    ax.set_title(title)
+                    ax.grid(True)
+                    return fig
 
-                fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-                ax.plot(angles, values, color="tab:blue", linewidth=2)
-                ax.fill(angles, values, color="tab:blue", alpha=0.25)
-                ax.set_thetagrids(np.degrees(angles[:-1]), labels)
-                ax.set_ylim(0, 1.0) 
-                ax.set_title(title)
-                ax.grid(True)
-                return fig
-
-            scaled = normalize_radar_values(radar_raw)
-            fig = plot_radar_chart(radar_cols, scaled, title=f"{selected_player}（{latest_year}）")
-            st.pyplot(fig)
+                scaled = normalize_radar_values(radar_raw)
+                fig = plot_radar_chart(radar_cols, scaled, title=f"{selected_player}（{latest_year}）")
+                st.pyplot(fig)
         drop_cols = [col for col in ["group_file"] if col in df_player.columns]
         st.write(f"### 昨年の成績一覧")
         base_cols = ["year", "選手名"]
 
-        # --- 打席0のときはNo Data表示 ---
+        # --- 打席0のときは成績テーブルのみ表示 ---
         if latest.get("打席") == 0:
-            st.markdown("**No Data**（打席が0のため）")
+            pass  # レーダーチャートもNo Data表示も出さず、下の成績テーブルのみ表示
         else:
             st.subheader("【基本打撃成績】")
             cols1 = ['打率', '試合', '打席', '打数', '安打', '単打', '二塁打', '三塁打', '本塁打', '本打率', '塁打', '長打率', 'OPS']
