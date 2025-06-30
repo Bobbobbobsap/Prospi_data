@@ -853,39 +853,43 @@ with tabs[6]:
         st.write(f"### 昨年の成績一覧")
         base_cols = ["year", "選手名"]
 
-        st.subheader("【基本打撃成績】")
-        cols1 = ['打率', '試合', '打席', '打数', '安打', '単打', '二塁打', '三塁打', '本塁打', '本打率', '塁打', '長打率', 'OPS']
-        st.dataframe(df_player[[c for c in cols1 if c in df_player.columns]])
+        # --- 打席0のときはNo Data表示 ---
+        if latest.get("打席") == 0:
+            st.markdown("**No Data**（打席が0のため）")
+        else:
+            st.subheader("【基本打撃成績】")
+            cols1 = ['打率', '試合', '打席', '打数', '安打', '単打', '二塁打', '三塁打', '本塁打', '本打率', '塁打', '長打率', 'OPS']
+            st.dataframe(df_player[[c for c in cols1 if c in df_player.columns]])
 
-        st.subheader("【得点圏・満塁成績】")
-        cols2 = ['打点', '得点圏打率', '圏率差', '圏打数', '圏安打', '満塁率', '満率差', '満塁数', '満塁安', '得点圏差']
-        st.dataframe(df_player[ [c for c in cols2 if c in df_player.columns]])
+            st.subheader("【得点圏・満塁成績】")
+            cols2 = ['打点', '得点圏打率', '圏率差', '圏打数', '圏安打', '満塁率', '満率差', '満塁数', '満塁安', '得点圏差']
+            st.dataframe(df_player[ [c for c in cols2 if c in df_player.columns]])
 
-        st.subheader("【対右・対左の傾向】")
-        cols3 = ['対右率', '右率差', '対右数', '対右安', '対左率', '左率差', '対左数', '対左安']
-        st.dataframe(df_player[ [c for c in cols3 if c in df_player.columns]])
+            st.subheader("【対右・対左の傾向】")
+            cols3 = ['対右率', '右率差', '対右数', '対右安', '対左率', '左率差', '対左数', '対左安']
+            st.dataframe(df_player[ [c for c in cols3 if c in df_player.columns]])
 
-        st.subheader("【出塁・三振・選球眼】")
-        cols4 = ['出塁率', '四球', '死球', '三振', '三振率', 'BB%', 'K%', 'BB/K', 'IsoD', 'アダム・ダン率']
-        st.dataframe(df_player[ [c for c in cols4 if c in df_player.columns]])
+            st.subheader("【出塁・三振・選球眼】")
+            cols4 = ['出塁率', '四球', '死球', '三振', '三振率', 'BB%', 'K%', 'BB/K', 'IsoD', 'アダム・ダン率']
+            st.dataframe(df_player[ [c for c in cols4 if c in df_player.columns]])
 
-        st.subheader("【走塁・盗塁】")
-        cols5 = ['盗企数', '盗塁', '盗塁率', '盗塁死', '赤星式盗塁']
-        st.dataframe(df_player[[c for c in cols5 if c in df_player.columns]])
+            st.subheader("【走塁・盗塁】")
+            cols5 = ['盗企数', '盗塁', '盗塁率', '盗塁死', '赤星式盗塁']
+            st.dataframe(df_player[[c for c in cols5 if c in df_player.columns]])
 
-        st.subheader("【小技・併殺打】")
-        cols6 = ['犠打', '犠飛', '併殺打', '併打率']
-        st.dataframe(df_player[ [c for c in cols6 if c in df_player.columns]])
+            st.subheader("【小技・併殺打】")
+            cols6 = ['犠打', '犠飛', '併殺打', '併打率']
+            st.dataframe(df_player[ [c for c in cols6 if c in df_player.columns]])
 
-        st.subheader("【その他】")
-        cols7 = ['連続安', '連試出', '連無安', '猛打賞', 'PA/HR', '得点', '内野安', '内安率', 'IsoP','BABIP']
-        st.dataframe(df_player[base_cols + [c for c in cols7 if c in df_player.columns]])
+            st.subheader("【その他】")
+            cols7 = ['連続安', '連試出', '連無安', '猛打賞', 'PA/HR', '得点', '内野安', '内安率', 'IsoP','BABIP']
+            st.dataframe(df_player[base_cols + [c for c in cols7 if c in df_player.columns]])
 
-        st.write(f"#### 年度別成績一覧（{selected_player}）")
-        drop_cols = [col for col in ["group_file"] if col in df_player.columns]
-        if "filename" in df_player.columns:
-            drop_cols.append("filename")
-        st.dataframe(df_player.drop(columns=drop_cols))
+            st.write(f"#### 年度別成績一覧（{selected_player}）")
+            drop_cols = [col for col in ["group_file"] if col in df_player.columns]
+            if "filename" in df_player.columns:
+                drop_cols.append("filename")
+            st.dataframe(df_player.drop(columns=drop_cols))
         # st.stop()
     else:
         # 投手モード
